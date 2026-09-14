@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Which Pages Should You Review First? An Honest, Client-Grouped Content Decline Model</title>
+<meta name="description" content="A decision-support model for prioritizing content review, built on FlyRank's real search-performance warehouse — with an honest baseline, a real leakage test, and named limits.">
+<meta property="og:title" content="Which Pages Should You Review First? An Honest, Client-Grouped Content Decline Model">
+<meta property="og:description" content="A decision-support model for prioritizing content review, built on FlyRank's real search-performance warehouse — with an honest baseline, a real leakage test, and named limits.">
+<meta property="og:type" content="article">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #1A2733;
+    --paper: #EDEEE7;
+    --flag: #A83A27;
+    --line: #C9CCC2;
+    --ink-soft: #4B5763;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', sans-serif;
+    line-height: 1.65;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 60px 24px 100px; }
+  h1, h2, h3 { font-family: 'Space Grotesk', sans-serif; color: var(--ink); }
+  h1 { font-size: clamp(28px, 4.5vw, 40px); line-height: 1.2; margin: 0 0 10px; }
+  h2 {
+    font-size: 24px;
+    margin: 56px 0 18px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+  }
+  h3 { font-size: 17px; margin: 28px 0 10px; }
+  p { margin: 0 0 16px; }
+  .byline { font-size: 14px; color: var(--ink-soft); margin-bottom: 40px; }
+  .abstract {
+    background: rgba(255,255,255,0.5);
+    border: 1px solid var(--line);
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .abstract h2 { margin-top: 0; padding-top: 0; border-top: none; font-size: 16px; text-transform: uppercase; letter-spacing: 0.06em; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 14px;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  th { font-family: 'Space Grotesk', sans-serif; font-size: 13px; }
+  figure { margin: 24px 0; }
+  figure img { width: 100%; border: 1px solid var(--line); }
+  figcaption { font-size: 13px; color: var(--ink-soft); margin-top: 8px; }
+  .limit-list li, .rec-list li { margin-bottom: 10px; }
+  a { color: var(--flag); }
+  .repro a { display: block; margin-bottom: 6px; font-size: 14px; }
+  code {
+    background: rgba(0,0,0,0.05);
+    padding: 1px 5px;
+    font-size: 13px;
+  }
+  .credit {
+    margin-top: 60px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+<h1>Which Pages Should You Review First? An Honest, Client-Grouped Content Decline Model</h1>
+<div class="byline">Lanre Odesanya — FlyRank ML Internship, Lane 2: Refresh/Content Opportunity Scoring</div>
+
+<div class="abstract">
+<h2>Abstract</h2>
+<p>Content teams have more pages than review time — so which ones get checked first? This paper builds a decision-support model on FlyRank's real search-performance warehouse (78.8M rows, March–April 2026) that ranks pages by observed decline risk. A client-grouped Logistic Regression model reaches Precision@20 and Precision@50 of 0.600 against a base rate of 0.517 — a real, if modest, lift — while a random (non-grouped) split on the same data inflates Precision@20 to 0.700, demonstrating the memorization risk a naive validation design hides. This is a decision-support tool only: it ranks candidates for human review, and makes no causal claim that reviewing a flagged page will fix it.</p>
+</div>
+
+<h2>Introduction</h2>
+<p>This is the real decision FlyRank's own content workflow faces: across a client's full page catalog, which pages deserve a reviewer's limited time first? FlyRank's product already runs a hand-tuned rule for this (Lane 2: Refresh/Content Opportunity Scoring) — this paper builds and validates a learned alternative to that same real decision, as an applied case study on FlyRank's own data, not a synthetic exercise.</p>
+<p>A small content team can realistically review 20–50 pages a week, out of a catalog that may hold tens of thousands. The real decision isn't "which pages are declining" in the abstract — it's "which pages should the one available reviewer look at first, today." A wrong answer here has a real cost either way: a false positive wastes a reviewer's limited hour on a page that didn't need it; a false negative lets a real decline run unnoticed for another month.</p>
+<p>This project builds that ranking, using only signals knowable before the decision point, validated in a way that actually predicts how the model will perform on a client it has never seen — the situation the tool will actually face in practice.</p>
+
+<h2>Data</h2>
+<p>Built on the FlyRank ML Internship warehouse release (build <code>flyrank_pseudonymized_warehouse_release_v20260703</code>), specifically <code>fact_content_daily_performance</code> — 78,835,655 rows, daily grain, spanning 2025-01-27 to 2026-06-30 across an unbalanced panel of clients.</p>
+<p>This paper uses two month-partitions: <strong>March 2026</strong> for features (9,841,378 rows, 331,437 distinct pages, 55 clients) and <strong>April 2026</strong> for the label — a genuinely future, observed outcome rather than a same-window proxy. The final month of the release (June 2026) was deliberately never used for label logic, per the internship's own warning that it is a sealed test window, not a random sample.</p>
+<p><strong>What was excluded, and why:</strong> GA4-derived engagement signals (session behavior, scroll depth) were excluded entirely — only 4.2% of March rows had GA4 data available, so any feature built on it would only be usable for a small, non-representative slice of pages. <code>trend_direction</code> and <code>trend_pct</code> were excluded as label-derived. No client names, raw URLs, or raw queries appear anywhere in this analysis — only pseudonymized hash IDs and aggregate metrics.</p>
+
+<h2>Methodology</h2>
+<h3>Unit of analysis</h3>
+<p>One row = one page's monthly aggregate (<code>content_hash_id</code>), matching how Lane 2 actually ranks pages, not page-days.</p>
+
+<h3>Label</h3>
+<p><code>is_declining</code> = 1 if April impressions fell below 80% of March impressions, else 0. This is an observed future outcome — not a rule-computed proxy like the starter dataset's <code>trend_direction</code> bucket.</p>
+
+<h3>Features</h3>
+<p>Five features, all built from March alone, each knowable before the April outcome: <code>impressions_mar</code>, <code>clicks_mar</code>, <code>avg_position_mar</code> (with <code>0</code> treated as "no data," not rank zero), <code>ctr_mar</code>, and <code>active_days_mar</code> (a consistency signal — distinct days with any recorded impressions).</p>
+
+<h3>Baseline</h3>
+<p>A transparent rule: flag a page if it has real visibility (<code>impressions_mar</code> ≥ 500) and its CTR falls below its own position tier's expected CTR (fit on train only). Reason code: <code>ctr_underperformance_visible</code>.</p>
+
+<h3>Validation design</h3>
+<p>Client-grouped split (<code>GroupShuffleSplit</code> on <code>client_hash_id</code>, 75/25, 33 train / 12 test clients, zero client overlap verified) — not a random split, since pages from the same client can share site-specific patterns a random split would let the model memorize.</p>
+
+<h3>Leakage audit</h3>
+<p>Full seven-point attack checklist run and passed: clean feature/label window boundary, no label-derived columns among the features, no product flags used, a client-grouped split, base rate reported alongside every metric, modest and non-dominant feature importances, and out-of-fold evaluation throughout. As direct verification, the label's own source column (<code>impressions_apr</code>) was deliberately added as a feature — Precision@20 jumped from the honest 0.600 to 1.000, confirming the test harness genuinely detects leakage rather than passing by accident.</p>
+
+<figure>
+<img src="img/leakage_test.png" alt="Bar chart: honest model scores 0.600 Precision@20, leaked model scores 1.000">
+<figcaption>Deliberately adding the label's source column pushed Precision@20 from an honest 0.600 to a meaningless 1.000 — proof the leakage-detection harness works, and that the honest number is clean because nothing is actually leaking, not by accident.</figcaption>
+</figure>
+
+<h2>Results</h2>
+<p>Base rate (share of pages that actually declined): <strong>0.517</strong>. Comparison below uses the same client-grouped split and the same metric for every method.</p>
+
+<figure>
+<img src="img/precision_comparison.png" alt="Bar chart comparing precision@20 and precision@50 across base rate, baseline rule, logistic regression, and random forest">
+<figcaption>Logistic Regression is the most consistent method — 0.600 at both K=20 and K=50. The baseline rule and Random Forest both swing more across K, including Random Forest dropping below the base rate at K=50.</figcaption>
+</figure>
+
+<table>
+<tr><th>Method</th><th>Precision@20</th><th>Precision@50</th></tr>
+<tr><td>Base rate</td><td>0.517</td><td>0.517</td></tr>
+<tr><td>Baseline rule</td><td>0.450</td><td>0.640</td></tr>
+<tr><td>Logistic Regression</td><td>0.600</td><td>0.600</td></tr>
+<tr><td>Random Forest</td><td>0.550</td><td>0.480</td></tr>
+</table>
+
+<p><strong>Honest note on the baseline:</strong> the baseline rule was originally built to flag CTR-vs-position underperformance — a different target than <code>is_declining</code>. Scoring it against a label it was never optimized for likely explains its inconsistency across K more than any flaw in the rule itself.</p>
+
+<h3>The validation gap</h3>
+<p>A model is only as trustworthy as its validation design. Below, the same Logistic Regression model is scored two ways: once with a random split (which lets pages from the same client land in both train and test), and once with the client-grouped split used everywhere else in this paper.</p>
+
+<figure>
+<img src="img/split_comparison.png" alt="Bar chart comparing precision at K=20 and K=50 for random split versus client-grouped split">
+<figcaption>The random split scores 10 points higher at K=20 (0.700 vs 0.600) — consistent with partial memorization of client-specific patterns. At K=50 the gap reverses, a reminder that at this sample size, any single K carries real uncertainty.</figcaption>
+</figure>
+
+<h2>Limitations &amp; Honest Framing</h2>
+<ul class="limit-list">
+<li><strong>Single month-pair.</strong> Built from one feature/label window (March → April). Whether the same pattern holds across other months or seasons is unknown, not just unproven.</li>
+<li><strong>Small-K sampling noise.</strong> Precision@20/50 are measured on a ~35,800-row test slice; a handful of pages flipping outcome can move either number by several points.</li>
+<li><strong>GSC-only signal.</strong> Only 4.2% of March rows had GA4 data available, so no engagement-based signal is part of this model — a real gap in what "risk" it can see.</li>
+<li><strong>No causal claim.</strong> This is cross-sectional, observational data. The model ranks pages by observed decline risk; it cannot say that reviewing or refreshing a flagged page will cause it to recover. That would require a real experiment with a control group, which this data does not provide.</li>
+<li><strong>Not tested against consolidation, seasonality, or SERP-feature effects.</strong> A page can look like it's declining for reasons this model cannot see — a sibling page absorbing its traffic, a seasonal pattern, or a competing search result. A human reviewer must rule these out before acting.</li>
+</ul>
+
+<h2>Ranked Recommendations</h2>
+<p>Scoring the full March slice (143,183 pages) with the validated Logistic Regression model, combined with the baseline's CTR-gap signal, produces three real archetypes:</p>
+
+<figure>
+<img src="img/archetypes.png" alt="Horizontal bar chart showing 100,340 Stable pages, 39,658 CTR underperformer pages, and 3,185 At-risk and underperforming pages">
+<figcaption>A fourth planned archetype ("decline risk with no CTR issue") had zero pages — every page the model flagged as high-risk also showed a CTR gap, plausibly because CTR is one of the model's own five input features.</figcaption>
+</figure>
+
+<table>
+<tr><th>Archetype</th><th>Pages</th><th>Action</th></tr>
+<tr><td>Stable</td><td>100,340 (70.1%)</td><td>Monitor</td></tr>
+<tr><td>CTR underperformer</td><td>39,658 (27.7%)</td><td>Review title/meta</td></tr>
+<tr><td>At-risk &amp; underperforming</td><td>3,185 (2.2%)</td><td>Priority review</td></tr>
+</table>
+
+<h3>What should never be automated</h3>
+<p>No page should be auto-edited, auto-republished, or auto-removed from this ranking alone. This queue must never be used as the sole basis for evaluating a writer's or team's performance — it measures pages, not people. No claim that a refresh "will" fix a page should be made from this ranking without a real experiment.</p>
+
+<h2>Reproducibility</h2>
+<div class="repro">
+<p>All work is in the public repository, seeds fixed at <code>random_state=42</code> throughout.</p>
+<a href="https://github.com/larryjay007/MyML/blob/main/work/notebooks/w03_data_contract.ipynb">w03_data_contract.ipynb — data contract and verification queries</a>
+<a href="https://github.com/larryjay007/MyML/blob/main/work/notebooks/w04_baseline_score.ipynb">w04_baseline_score.ipynb — signal checks and baseline rule</a>
+<a href="https://github.com/larryjay007/MyML/blob/main/work/notebooks/w05_model.ipynb">w05_model.ipynb — first model and comparison</a>
+<a href="https://github.com/larryjay007/MyML/blob/main/work/notebooks/w06_validation_audit.ipynb">w06_validation_audit.ipynb — before/after split, leakage audit</a>
+<a href="https://github.com/larryjay007/MyML/blob/main/work/notebooks/w07_action_playbook.ipynb">w07_action_playbook.ipynb — ranked playbook and exports</a>
+</div>
+
+<div class="credit">
+Built on the FlyRank ML Internship dataset — <a href="https://flyrank.ai">flyrank.ai</a>
+</div>
+
+</div>
+</body>
+</html>
